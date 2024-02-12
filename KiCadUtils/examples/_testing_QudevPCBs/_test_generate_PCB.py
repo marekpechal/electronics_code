@@ -3,6 +3,10 @@ filepath = os.path.dirname(os.path.realpath(__file__))
 libpath = os.path.normpath(os.path.join(filepath, '..\\..'))
 sys.path.insert(-1, libpath)
 
+# TODO: fix the discrepancy in routing bend directions due to the KiCad using
+# the "positive x = right & positive y = down" convention
+# TODO: check why demo from testboard.json gives DRC violations (likely
+# incorrectly assigned netclass)
 
 import matplotlib.pyplot as plt
 import shapely

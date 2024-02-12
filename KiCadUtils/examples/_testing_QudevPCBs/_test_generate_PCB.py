@@ -23,7 +23,7 @@ os.system(f'copy {template_filename}.kicad_pro {output_filename}.kicad_pro')
 board = KiCadStructure.fromPCBfile(template_filename + '.kicad_pcb')
 gnd_net_idx = board.addNet('GND')
 pcb_center = [100.0, 100.0]
-with open(output_filename + '.kicad_pro', 'r') as f:
+with open(template_filename + '.kicad_pro', 'r') as f:
     design_rules = json.load(f)['board']['design_settings']['rules']
 
 with open(config_file, 'r') as f:

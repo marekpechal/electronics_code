@@ -51,73 +51,80 @@ class KiCadStructure(Structure):
             name_filter = None,
             layer_filter = None,
             net_filter = None,
-            content_filter = None):
-        for entry in self.walk():
-            if name_filter is None or name_filter(entry.name):
-                if content_filter is None or content_filter(entry.content):
-                    lst_layer = list(entry['layer']) + list(entry['layers'])
-                    if (layer_filter is None or
-                            (len(lst_layer) == 1 and
-                            layer_filter(lst_layer[0].content))):
-                        lst_net = list(entry['net'])
-                        if (net_filter is None or
-                                (len(lst_net) == 1 and
-                                net_filter(lst_net[0].content))):
+            content_filter = None,
+            recursive = False,
+            **kwargs):
+        def apply(filter, obj):
+            if filter is not None:
+                return filter(obj)
+            else:
+                return True
+        if recursive:
+            objects = self.walk(**kwargs)
+        else:
+            objects = self.children
+        for entry in objects:
+            if apply(name_filter, entry.name):
+                if apply(content_filter, entry.content):
+                    if apply(layer_filter, entry.getLayers()):
+                        if apply(net_filter, entry.getNet()):
                             yield entry
+
+    def getLayers(self):
+        return self.getChildrenContent('layer', 'layers')
+
+    def getNet(self):
+        return self.getChildrenContent('net')
 
     def getSegment(self):
         T = self.getTransformation()
-        lst_start = list(self['start'])
-        lst_end = list(self['end'])
-        lst_width = list(self['width'])
-        if len(lst_start) == 1 and len(lst_end) == 1 and len(lst_width) == 1:
-            pt1 = T([float(s) for s in lst_start[0].content])
-            pt2 = T([float(s) for s in lst_end[0].content])
-            width = float(lst_width[0].content[0])
-            return _segmentToPoly(pt1, pt2, width)
-        elif len(lst) == 0:
-            raise ValueError('object does not contain a polygon')
-
+        pt1 = T([float(s) for s in self['start'].content])
+        pt2 = T([float(s) for s in self['end'].content])
+        width = float(self['width'].content[0])
+        return _segmentToPoly(pt1, pt2, width)
 
     def getPolygon(self):
         T = self.getTransformation()
-        lst = list(self['polygon'])
-        if len(lst) == 1:
-            return np.array([T([float(s) for s in obj.content])
-                for obj in list(lst[0]['pts'])[0]['xy']])
-        elif len(lst) == 0:
-            raise ValueError('object does not contain a polygon')
-        else:
-            raise ValueError('object contains more than one polygon')
+        return np.array([T([float(s) for s in obj.content])
+            for obj in self['polygon']['pts'].getChildren('xy')])
 
     def getRectangle(self):
         T = self.getTransformation()
-        lst = list(self['size'])
-        if len(lst) == 1:
-            w, h = [float(s) for s in lst[0].content]
-            pts = [[-w/2, -h/2], [w/2, -h/2], [w/2, h/2], [-w/2, h/2]]
-            return np.array([T(x) for x in pts])
-        elif len(lst) == 0:
-            raise ValueError('object does not contain a size entry')
-        else:
-            raise ValueError('object contains more than one size entry')
+        w, h = [float(s) for s in self['size'].content]
+        pts = [[-w/2, -h/2], [w/2, -h/2], [w/2, h/2], [-w/2, h/2]]
+        return np.array([T(x) for x in pts])
 
-    def getCircle(self):
+    def getCircle(self, Npoints = 40):
         T = self.getTransformation()
-        lst = list(self['size'])
-        if len(lst) == 1:
-            w, h = [float(s) for s in lst[0].content]
-            r = (w + h) / 4
-            return T.translation_vector + r*np.array([[np.cos(u), np.sin(u)]
-                for u in np.linspace(0, 2*np.pi, 41)[:-1]])
-        elif len(lst) == 0:
-            raise ValueError('object does not contain a size entry')
+        w, h = [float(s) for s in self['size'].content]
+        r = (w + h) / 4
+        return T.translation_vector + r*np.array([[np.cos(u), np.sin(u)]
+            for u in np.linspace(0, 2*np.pi, Npoints+1)[:-1]])
+
+    def toPolygon(self):
+        if self.name == 'segment':
+            return self.getSegment()
+        elif self.name == 'pad':
+            if (self.content[1] in ['thru_hole', 'np_thru_hole'] and
+                self.content[2] == 'circle'):
+                return self.getCircle()
+            elif self.content[1] == 'smd' and self.content[2] == 'rect':
+                return self.getRectangle()
+            else:
+                raise NotImplementedError(f'pad {self.content[1:]}')
+        elif self.name == 'zone':
+            return self.getPolygon()
         else:
-            raise ValueError('object contains more than one size entry')
+            raise NotImplementedError(f'{self.name}')
 
 
-    def toPolys(self): # does not handle all geometry
+    def toPolys(self, recursive = False, **kwargs): # does not handle all geometry
         layers = {}
+
+        if recursive:
+            objects = self.walk(**kwargs)
+        else:
+            objects = self.getChildren
 
         for entry in self.walk():
             if entry.name == 'zone':
@@ -182,7 +189,7 @@ class KiCadStructure(Structure):
         T = Transformation.I()
         obj = self
         while obj is not None:
-            lst = list(obj['at'])
+            lst = list(obj.getChildren('at'))
             if len(lst) == 1:
                 params = [float(s) for s in lst[0].content]
                 translation_vector = np.array([params[0], params[1]])

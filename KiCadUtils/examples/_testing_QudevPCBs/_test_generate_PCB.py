@@ -5,6 +5,10 @@ sys.path.insert(-1, libpath)
 
 
 import matplotlib.pyplot as plt
+from matplotlib.path import Path
+from matplotlib.patches import PathPatch
+from matplotlib.collections import PatchCollection
+
 import shapely
 import shapely.geometry, shapely.ops
 
@@ -13,6 +17,37 @@ from lqd_routing import RouteDescription
 import Footprints
 import numpy as np
 import json
+import itertools
+
+def plotShapelyPolygon(ax, poly, **kwargs):
+    """
+    Helper function to plot a shapely.geometry.Polygon object
+    """
+    # from https://stackoverflow.com/a/70533052
+    path = Path.make_compound_path(
+        Path(np.asarray(poly.exterior.coords)[:, :2]),
+        *[Path(np.asarray(ring.coords)[:, :2]) for ring in poly.interiors])
+
+    patch = PathPatch(path, **kwargs)
+    collection = PatchCollection([patch], **kwargs)
+
+    ax.add_collection(collection, autolim=True)
+    ax.autoscale_view()
+    return collection
+
+def plotShapelyPolyLike(ax, poly, **kwargs):
+    """
+    Helper function to plot a shapely.geometry.Polygon or
+    shapely.geometry.MultiPolygon object
+    """
+    if isinstance(poly, shapely.geometry.Polygon):
+        polys = [poly]
+    elif isinstance(poly, shapely.geometry.MultiPolygon):
+        polys = poly.geoms
+    else:
+        raise NotImplementedError(f'{poly}')
+    for poly in polys:
+        plotShapelyPolygon(ax, poly, **kwargs)
 
 template_filename = 'Template'
 output_filename = 'output\\test'
@@ -86,13 +121,13 @@ if config['cutout']['shape'] == 'RECTANGULAR':
         [pcb_center[0]-cutout_w/2+d, pcb_center[1]-cutout_h/2]
         )
     cutout_polygon = np.concatenate((
-        [[-cutout_w/2+d+relief_r*np.cos(u), -cutout_h/2+d+relief_r*np.sin(u)]
+        [[-cutout_w/2+d/2+relief_r*np.cos(u), -cutout_h/2+d/2+relief_r*np.sin(u)]
             for u in np.linspace(3*np.pi/4, 7*np.pi/4, 21)],
-        [[+cutout_w/2-d+relief_r*np.cos(u), -cutout_h/2+d+relief_r*np.sin(u)]
+        [[+cutout_w/2-d/2+relief_r*np.cos(u), -cutout_h/2+d/2+relief_r*np.sin(u)]
             for u in np.linspace(5*np.pi/4, 9*np.pi/4, 21)],
-        [[+cutout_w/2-d+relief_r*np.cos(u), +cutout_h/2-d+relief_r*np.sin(u)]
+        [[+cutout_w/2-d/2+relief_r*np.cos(u), +cutout_h/2-d/2+relief_r*np.sin(u)]
             for u in np.linspace(7*np.pi/4, 11*np.pi/4, 21)],
-        [[-cutout_w/2+d+relief_r*np.cos(u), +cutout_h/2-d+relief_r*np.sin(u)]
+        [[-cutout_w/2+d/2+relief_r*np.cos(u), +cutout_h/2-d/2+relief_r*np.sin(u)]
             for u in np.linspace(9*np.pi/4, 13*np.pi/4, 21)]
         )) + np.array(pcb_center)
 else:
@@ -110,10 +145,10 @@ for connector in config['connectors']:
             pt = [pcb_center[0] + r*np.cos(phi), pcb_center[1] - r*np.sin(phi)]
             orientation = 90 + 180*phi/np.pi
             footprint_instance = board.placeAt(footprint, pt, orientation)
-            for pad in footprint_instance['pad']:
+            for pad in footprint_instance.getChildren('pad'):
                 if pad.content[0] == '1':
                     connector_pads.append(pad)
-                    for net_entry in pad['net']:
+                    for net_entry in pad.getChildren('net'):
                         net = connectors_count + 2
                         net_name = f'NET_{net-1}'
                         board.addNet(net_name)
@@ -170,9 +205,9 @@ for side, xP, sgn, flip, angle in [
 
 board.addAsChild(launchers)
 
-
 # =====================
 
+# placing traces joining connectors with launchers
 for conn_pad_idx, pad in enumerate(connector_pads):
     key = str(conn_pad_idx + 1)
     if key in config['launcher_to_connector_mapping']:
@@ -196,12 +231,10 @@ for conn_pad_idx, pad in enumerate(connector_pads):
         route.initial_position = pt1
         route.initial_direction_vector = np.array([np.cos(dir1), -np.sin(dir1)])
 
-
-
         poly = np.array(
             [route.point(s)[0] for s in np.linspace(0, route.length(), 101)[1:-1]])
         board.addPolySegment(poly, 0.17, 'F.Cu', int(key) + 1)
-        plt.plot(poly[:, 0], poly[:, 1])
+        plt.plot(poly[:, 0], poly[:, 1], color = 'black')
 
 for pad in connector_pads + launcher_pads:
     pad_T = pad.getTransformation()
@@ -217,47 +250,58 @@ plt.show()
 
 
 ######################
-buffer_distance = 0.6
-polys = [shapely.geometry.Polygon(cutout_polygon).buffer(buffer_distance)]
 
+# creating polygon representations of objects on the PCB
+# for plotting and for via distribution
+polys = {
+    'cutout': [shapely.geometry.Polygon(cutout_polygon)],
+    'segment': [],
+    'pad': [],
+    'footprint': []
+    }
+
+# convert segments and pads
 for obj in board.filter(
-        name_filter = (lambda s: s == 'zone'),
-        layer_filter = (lambda c: 'F.Cu' in c),
-        net_filter = (lambda c: c[0] == '0'),
-        content_filter = None):
-    poly = obj.getPolygon()
-    polys.append(shapely.geometry.Polygon(poly).buffer(buffer_distance))
+        name_filter = (lambda s: s in ['segment', 'pad']),
+        layer_filter = (lambda c: 'F.Cu' in c or 'B.Cu' in c or '*.Cu' in c),
+        recursive = True,
+        check = lambda obj: obj.name != 'footprint'):
+    polys[obj.name].append(shapely.geometry.Polygon(obj.toPolygon()))
 
-for obj in board.filter(
-        name_filter = (lambda s: s == 'pad'),
-        content_filter = (lambda c: len(c) == 3 and c[1] == 'smd' and c[2] == 'rect'),
-        layer_filter = (lambda c: 'F.Cu' in c),
-        net_filter = None):
-    poly = obj.getRectangle()
-    polys.append(shapely.geometry.Polygon(poly).buffer(buffer_distance))
+# convert footprints (represented by the convex hull of all contained objects)
+for footprint in board.getChildren('footprint'):
+    points = []
+    for obj in footprint.filter(
+        name_filter = (lambda s: s in ['zone', 'segment', 'pad']),
+        layer_filter = (lambda c: 'F.Cu' in c or 'B.Cu' in c or '*.Cu' in c),
+        recursive = True
+        ):
+        points += list(obj.toPolygon())
 
-for obj in board.filter(
-        name_filter = (lambda s: s == 'segment'),
-        content_filter = None,
-        layer_filter = (lambda c: 'F.Cu' in c),
-        net_filter = None):
-    poly = obj.getSegment()
-    polys.append(shapely.geometry.Polygon(poly).buffer(buffer_distance))
+    polys['footprint'].append(shapely.geometry.MultiPoint(points).convex_hull)
 
-for obj in board.filter(
-        name_filter = (lambda s: s == 'pad'),
-        content_filter = (lambda c: len(c) == 3 and c[1] in ['thru_hole', 'np_thru_hole'] and c[2] == 'circle'),
-        layer_filter = (lambda c: 'F.Cu' in c or '*.Cu' in c),
-        net_filter = None):
-    poly = obj.getCircle()
-    polys.append(shapely.geometry.Polygon(poly).buffer(buffer_distance))
-
-poly_combined = shapely.ops.unary_union(polys)
-
+# parameters for via distribution
 via_diameter = 0.5
 via_drill_diameter = 0.3
+clearances = {
+    'cutout': 0.1,
+    'segment': 0.25,
+    'pad': 0.25,
+    'footprint': 0.1
+    }
 
-dr = 0.8
+buffer_distance = via_diameter / 2
+poly_combined = shapely.ops.unary_union([poly
+    for name, lst in polys.items() for poly in lst])
+poly_buff_combined = shapely.ops.unary_union(
+    [poly.buffer(clearances[name] + via_diameter/2)
+    for name, lst in polys.items() for poly in lst])
+
+
+fig, ax = plt.subplots()
+
+# plot and distribute vias
+dr = 1.5 * via_diameter
 for r in np.arange(0, config['board_diameter']/2 - 0.5*dr, dr):
     if r == 0:
         phi_rng = [0]
@@ -266,16 +310,13 @@ for r in np.arange(0, config['board_diameter']/2 - 0.5*dr, dr):
         phi_rng = np.linspace(0, 2*np.pi, N+1)[:-1]
     for phi in phi_rng:
         pt = [pcb_center[0]+r*np.cos(phi), pcb_center[1]+r*np.sin(phi)]
-        if not poly_combined.contains(shapely.geometry.Point(*pt)):
-            plt.plot(*pt, 'o')
+        if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
+            plt.plot(*pt, '.', color = 'green')
             board.addVia(*pt, via_diameter, via_drill_diameter, 1)
-plt.fill(*poly_combined.exterior.xy, color = 'black')
+
+plotShapelyPolyLike(ax, poly_buff_combined, facecolor=(0., 0., 1., 0.2))
+plotShapelyPolyLike(ax, poly_combined, facecolor=(0., 0., 0., 0.2))
 plt.show()
 
-
-# polys = board.toPolys()
-# for poly in polys['F.Cu']:
-#     plt.plot(poly[:, 0], poly[:, 1])
-# plt.show()
-
+# save KiCad PCB file
 board.toPCBfile(output_filename + '.kicad_pcb')

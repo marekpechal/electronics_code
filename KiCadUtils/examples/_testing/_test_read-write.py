@@ -25,7 +25,7 @@ def simplify_string(s):
         s = s_new
     return s
 
-input_filename = 'E:\\electronics\\DemoPCB\\DemoPCB.kicad_pcb'
+input_filename = 'DemoPCB.kicad_pcb'
 output_filename = '_copy.kicad_pcb'
 
 board = KiCadStructure.fromPCBfile(input_filename)

@@ -53,9 +53,9 @@ def plotShapelyPolyLike(ax, poly, **kwargs):
     for poly in polys:
         plotShapelyPolygon(ax, poly, **kwargs)
 
-template_filename = 'Template'
-output_filename = 'output\\test'
-config_file = 'testboard.json'
+template_filename = os.path.join(filepath, 'Template')
+output_filename = os.path.join(filepath, 'output\\test')
+config_file = os.path.join(filepath, 'testboard2.json')
 
 # prepare template
 os.system(f'copy {template_filename}.kicad_pro {output_filename}.kicad_pro')

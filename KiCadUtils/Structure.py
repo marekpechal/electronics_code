@@ -33,13 +33,26 @@ class Structure:
         self.parent = parent
         self.content = content
 
-    def __getitem__(self, key):
-        for child in self.children:
-            if child.name == key:
-                yield child
-
     def copy(self):
         return copy.deepcopy(self)
+
+    def getChildren(self, name, recursive = False, **kwargs):
+        if recursive:
+            objects = self.walk(**kwargs)
+        else:
+            objects = self.children
+        for child in objects:
+            if child.name == name:
+                yield child
+
+    def __getitem__(self, name):
+        lst = list(self.getChildren(name))
+        if len(lst) == 1:
+            return lst[0]
+        elif len(lst) == 0:
+            raise ValueError(f'object has no child {name}')
+        else:
+            raise ValueError(f'object has >1 child {name}')
 
     def addChild(self, cls = None, name = '', content = None, position = None):
         """
@@ -107,6 +120,20 @@ class Structure:
             if check is None or check(self):
                 for child in self.children:
                     yield from child.walk(check = check)
+
+    def getChildrenContent(self, *args):
+        """
+        Combines and returns contents of all children with given names.
+
+        Parameters
+        ----------
+        name1, name2, ... : str
+        """
+        content = []
+        for name in args:
+            for child in self.getChildren(name):
+                content += child.content
+        return content
 
     def __str__(self, indent = ''):
         s = indent + str(self.name) + ': ' + str(self.content) + '\n'

@@ -319,6 +319,11 @@ class KiCadStructure(Structure):
     def addEdgeCutCircle(self, xc, yc, radius):
         self.addGraphicalCircle(xc, yc, radius, 0.05, 'Edge.Cuts')
 
+    def addEdgeCutRectangle(self, x1, y1, x2, y2):
+        self.addEdgeCutLine(x1, y1, x2, y1)
+        self.addEdgeCutLine(x2, y1, x2, y2)
+        self.addEdgeCutLine(x2, y2, x1, y2)
+        self.addEdgeCutLine(x1, y2, x1, y1)
 
     def addHole(self, pt, drill_diameter):
         child = self.addChild(cls = KiCadStructure, name = 'module', content = ['Hole'])
@@ -447,6 +452,11 @@ class KiCadStructure(Structure):
     def filledZoneCircle(cls, net, net_name, layer, xc, yc, radius, Npts = 100, **kwargs):
         pts = [[xc + radius*np.cos(u), yc + radius*np.sin(u)]
             for u in np.linspace(0, 2*np.pi, Npts+1)[:-1]]
+        return cls.filledZone(net, net_name, layer, pts, **kwargs)
+
+    @classmethod
+    def filledZoneRectangle(cls, net, net_name, layer, x1, y1, x2, y2, **kwargs):
+        pts = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
         return cls.filledZone(net, net_name, layer, pts, **kwargs)
 
     @classmethod

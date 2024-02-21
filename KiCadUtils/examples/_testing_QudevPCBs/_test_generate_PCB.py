@@ -26,9 +26,10 @@ def plotShapelyPolygon(ax, poly, **kwargs):
     Helper function to plot a shapely.geometry.Polygon object
     """
     # from https://stackoverflow.com/a/70533052
+    A = np.array([1, -1])
     path = Path.make_compound_path(
-        Path(np.asarray(poly.exterior.coords)[:, :2]),
-        *[Path(np.asarray(ring.coords)[:, :2]) for ring in poly.interiors])
+        Path(np.asarray(poly.exterior.coords)[:, :2] * A),
+        *[Path(np.asarray(ring.coords)[:, :2] * A) for ring in poly.interiors])
 
     patch = PathPatch(path, **kwargs)
     collection = PatchCollection([patch], **kwargs)
@@ -50,6 +51,9 @@ def plotShapelyPolyLike(ax, poly, **kwargs):
         raise NotImplementedError(f'{poly}')
     for poly in polys:
         plotShapelyPolygon(ax, poly, **kwargs)
+
+def getParam(dct, key, namespace):
+    return eval(str(dct[key]), namespace)
 
 for fname in os.listdir(filepath):
     if not fname.endswith('.json'):
@@ -168,7 +172,7 @@ for fname in os.listdir(filepath):
             for i in range(connector['pattern_count']):
                 phi = 2*np.pi*(i+connector['pattern_relative_rotation'])/connector['pattern_count']
                 pt = [pcb_center[0] + r*np.cos(phi), pcb_center[1] - r*np.sin(phi)]
-                orientation = 90 + 180*phi/np.pi
+                orientation = 180*phi/np.pi + 180
                 lst.append((pt, orientation))
         elif connector['pattern_type'] == 'LINEAR':
             pt1 = np.array(connector['pattern_start_point'])
@@ -194,20 +198,24 @@ for fname in os.listdir(filepath):
 
     # HOLES
     for hole in config['holes']:
-        if hole['pattern_type'] == 'CIRCULAR':
-            r = hole['pattern_diameter']/2
-            for i in range(hole['pattern_count']):
-                phi = 2*np.pi*(i+hole['pattern_relative_rotation'])/hole['pattern_count']
-                pt = [pcb_center[0] + r*np.cos(phi), pcb_center[1] + r*np.sin(phi)]
-                board.addHole(pt, hole['drill_diameter'])
-        elif hole['pattern_type'] == 'LINEAR':
-            pt1 = np.array(hole['pattern_start_point'])
-            pt2 = np.array(hole['pattern_end_point'])
-            for i in range(hole['pattern_count']):
-                pt = pt1 + i*(pt2-pt1)/(hole['pattern_count']-1)
-                board.addHole(pt+pcb_center, hole['drill_diameter'])
-        else:
-            NotImplementedError(f'Pattern type {hole["pattern_type"]}')
+        if 'pattern_type' in hole: # pattern of holes
+            if hole['pattern_type'] == 'CIRCULAR':
+                r = hole['pattern_diameter']/2
+                for i in range(hole['pattern_count']):
+                    phi = 2*np.pi*(i+hole['pattern_relative_rotation'])/hole['pattern_count']
+                    pt = [pcb_center[0] + r*np.cos(phi), pcb_center[1] + r*np.sin(phi)]
+                    board.addHole(pt, hole['drill_diameter'])
+            elif hole['pattern_type'] == 'LINEAR':
+                pt1 = np.array(hole['pattern_start_point'])
+                pt2 = np.array(hole['pattern_end_point'])
+                for i in range(hole['pattern_count']):
+                    pt = pt1 + i*(pt2-pt1)/(hole['pattern_count']-1)
+                    board.addHole(pt+pcb_center, hole['drill_diameter'])
+            else:
+                NotImplementedError(f'Pattern type {hole["pattern_type"]}')
+        else: # single hole
+            pt = np.array(hole['position'])
+            board.addHole(pt+pcb_center, hole['drill_diameter'])
 
     # LAUNCHERS
     launcher_pads = []
@@ -253,10 +261,18 @@ for fname in os.listdir(filepath):
     # ADDITIONAL LAUNCHERS
     if 'launchers' in config:
         for launcher in config['launchers']:
+            margin = launcher['launcher_length'] / 2 + 1.1 * design_rules['min_copper_edge_clearance']
+            if config['board_shape'] == 'RECTANGULAR':
+                eval_namespace = {
+                    'left_edge': -config['board_width']/2 + margin,
+                    'right_edge': config['board_width']/2 - margin,
+                    'top_edge': -config['board_height']/2 + margin,
+                    'bottom_edge': config['board_height']/2 - margin,
+                    }
             launchers = KiCadStructure(name = 'module', content = ['Launchers'])
             if launcher['pattern_type'] == 'LINEAR':
-                pt1 = np.array(launcher['pattern_start_point'])
-                pt2 = np.array(launcher['pattern_end_point'])
+                pt1 = np.array(getParam(launcher, 'pattern_start_point', eval_namespace))
+                pt2 = np.array(getParam(launcher, 'pattern_end_point', eval_namespace))
                 angle = launcher['launcher_orientation']
                 for i in range(launcher['pattern_count']):
                     if str(launcher_idx) in config['launcher_to_connector_mapping']:
@@ -310,7 +326,7 @@ for fname in os.listdir(filepath):
             route.initial_direction_vector = np.array([np.cos(dir1), -np.sin(dir1)])
 
             poly = np.array(
-                [route.point(s)[0] for s in np.linspace(0, route.length(), 101)[1:-1]])
+                [route.point(s)[0] for s in np.linspace(1e-6, route.length()-1e-6, 101)])
             board.addPolySegment(poly, 0.17, 'F.Cu', int(key) + 1)
             plt.plot(poly[:, 0], -poly[:, 1], color = 'black')
 
@@ -392,7 +408,7 @@ for fname in os.listdir(filepath):
             for phi in phi_rng:
                 pt = [pcb_center[0]+r*np.cos(phi), pcb_center[1]+r*np.sin(phi)]
                 if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
-                    plt.plot(*pt, '.', color = 'green')
+                    plt.plot(pt[0], -pt[1], '.', color = 'green')
                     board.addVia(*pt, via_diameter, via_drill_diameter, 1)
 
     elif config['board_shape'] == 'RECTANGULAR':
@@ -405,7 +421,7 @@ for fname in os.listdir(filepath):
                 x = dr * (j - (Nx-1)/2) + 0.25 * dr * (-1)**(i % 2)
                 pt = [pcb_center[0]+x, pcb_center[1]+y]
                 if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
-                    plt.plot(*pt, '.', color = 'green')
+                    plt.plot(pt[0], -pt[1], '.', color = 'green')
                     board.addVia(*pt, via_diameter, via_drill_diameter, 1)
 
     plotShapelyPolyLike(ax, poly_buff_combined, facecolor=(0., 0., 1., 0.2))

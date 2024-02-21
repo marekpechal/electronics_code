@@ -3,8 +3,6 @@ filepath = os.path.dirname(os.path.realpath(__file__))
 libpath = os.path.normpath(os.path.join(filepath, '..\\..'))
 sys.path.insert(-1, libpath)
 
-# TODO: fix the discrepancy in routing bend directions due to the KiCad using
-# the "positive x = right & positive y = down" convention
 # TODO: check why demo from testboard.json gives DRC violations (likely
 # incorrectly assigned netclass)
 
@@ -297,14 +295,16 @@ for fname in os.listdir(filepath):
             conn_pad_T = conn_pad.getTransformation()
             lncr_pad_T = lncr_pad.getTransformation()
 
-            pt1 = conn_pad_T.translation_vector
-            dir1 = conn_pad_T.rotation_angle
-            pt2 = lncr_pad_T.translation_vector
-            dir2 = lncr_pad_T.rotation_angle
+            pt1 = lncr_pad_T.translation_vector
+            dir1 = lncr_pad_T.rotation_angle
+            pt2 = conn_pad_T.translation_vector
+            dir2 = conn_pad_T.rotation_angle
 
             bend_radius = 2.0
+            cmd = config['launcher_to_connector_mapping'][key][1]
+            cmd = cmd.translate({114: 108, 108: 114}) # swap 'r' <-> 'l'
             route = RouteDescription.between_points(pt1, -dir1, pt2, -dir2,
-                bend_radius, cmd = config['launcher_to_connector_mapping'][key][1])
+                bend_radius, cmd = cmd)
 
             route.initial_position = pt1
             route.initial_direction_vector = np.array([np.cos(dir1), -np.sin(dir1)])
@@ -312,7 +312,7 @@ for fname in os.listdir(filepath):
             poly = np.array(
                 [route.point(s)[0] for s in np.linspace(0, route.length(), 101)[1:-1]])
             board.addPolySegment(poly, 0.17, 'F.Cu', int(key) + 1)
-            plt.plot(poly[:, 0], poly[:, 1], color = 'black')
+            plt.plot(poly[:, 0], -poly[:, 1], color = 'black')
 
     for pad in connector_pads + launcher_pads:
         pad_T = pad.getTransformation()
@@ -322,7 +322,7 @@ for fname in os.listdir(filepath):
         R = _rotation_matrix(dir)
         pts = np.array([[2.0, -1.0, -1.0], [0., 0.5, -0.5]])
         pts = R.dot(pts).transpose() + pt
-        plt.fill(pts[:, 0], pts[:, 1], color = 'red')
+        plt.fill(pts[:, 0], -pts[:, 1], color = 'red')
 
     plt.show()
 

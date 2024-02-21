@@ -65,7 +65,7 @@ for fname in os.listdir(filepath):
     os.system(f'copy {template_filename}.kicad_pro {output_filename}.kicad_pro')
     board = KiCadStructure.fromPCBfile(template_filename + '.kicad_pcb')
     gnd_net_idx = board.addNet('GND')
-    pcb_center = [100.0, 100.0]
+    pcb_center = np.array([100.0, 100.0])
     with open(template_filename + '.kicad_pro', 'r') as f:
         design_rules = json.load(f)['board']['design_settings']['rules']
 
@@ -105,7 +105,7 @@ for fname in os.listdir(filepath):
 
     # CUTOUT
     if not 'cutout' in config:
-        pass
+        cutout_polygon = None
     elif config['cutout']['shape'] == 'RECTANGULAR':
         cutout_w, cutout_h = config['cutout']['dimensions']
         relief_r = config['cutout']['internal_relief_diameter']
@@ -164,24 +164,35 @@ for fname in os.listdir(filepath):
     connectors_count = 0
     for connector in config['connectors']:
         footprint = getattr(Footprints, connector['footprint'])()
+        lst = []
         if connector['pattern_type'] == 'CIRCULAR':
             r = connector['pattern_diameter']/2
             for i in range(connector['pattern_count']):
                 phi = 2*np.pi*(i+connector['pattern_relative_rotation'])/connector['pattern_count']
                 pt = [pcb_center[0] + r*np.cos(phi), pcb_center[1] - r*np.sin(phi)]
                 orientation = 90 + 180*phi/np.pi
-                footprint_instance = board.placeAt(footprint, pt, orientation)
-                for pad in footprint_instance.getChildren('pad'):
-                    if pad.content[0] == '1':
-                        connector_pads.append(pad)
-                        for net_entry in pad.getChildren('net'):
-                            net = connectors_count + 2
-                            net_name = f'NET_{net-1}'
-                            board.addNet(net_name)
-                            net_entry.content = [str(net), net_name]
-                connectors_count += 1
+                lst.append((pt, orientation))
+        elif connector['pattern_type'] == 'LINEAR':
+            pt1 = np.array(connector['pattern_start_point'])
+            pt2 = np.array(connector['pattern_end_point'])
+            for i in range(connector['pattern_count']):
+                pt = pt1 + i*(pt2-pt1)/(connector['pattern_count']-1)
+                lst.append((pt+pcb_center, connector['footprint_orientation']))
         else:
             NotImplementedError(f'Pattern type {connector["pattern_type"]}')
+
+        for pt, orientation in lst:
+            footprint_instance = board.placeAt(footprint, pt, orientation)
+            for pad in footprint_instance.getChildren('pad'):
+                if pad.content[0] == '1':
+                    connector_pads.append(pad)
+                    for net_entry in pad.getChildren('net'):
+                        net = connectors_count + 2
+                        net_name = f'NET_{net-1}'
+                        board.addNet(net_name)
+                        net_entry.content = [str(net), net_name]
+            connectors_count += 1
+
 
     # HOLES
     for hole in config['holes']:
@@ -191,45 +202,86 @@ for fname in os.listdir(filepath):
                 phi = 2*np.pi*(i+hole['pattern_relative_rotation'])/hole['pattern_count']
                 pt = [pcb_center[0] + r*np.cos(phi), pcb_center[1] + r*np.sin(phi)]
                 board.addHole(pt, hole['drill_diameter'])
+        elif hole['pattern_type'] == 'LINEAR':
+            pt1 = np.array(hole['pattern_start_point'])
+            pt2 = np.array(hole['pattern_end_point'])
+            for i in range(hole['pattern_count']):
+                pt = pt1 + i*(pt2-pt1)/(hole['pattern_count']-1)
+                board.addHole(pt+pcb_center, hole['drill_diameter'])
         else:
-            NotImplementedError(f'Pattern type {connector["pattern_type"]}')
+            NotImplementedError(f'Pattern type {hole["pattern_type"]}')
 
     # LAUNCHERS
     launcher_pads = []
-    margin = config['cutout']['launcher_length'] / 2 + 1.1 * design_rules['min_copper_edge_clearance']
-    x0 = config['cutout']['dimensions'][0] / 2 + margin
-    y0 = config['cutout']['dimensions'][1] / 2 + margin
-    launchers = KiCadStructure(name = 'module', content = ['Launchers'])
     launcher_idx = 1
-    for side, xP, sgn, flip, angle in [
-            ('left',  -x0, 1, True, 180),
-            ('bottom', y0, 1, False, 270),
-            ('right', x0, -1, True, 0),
-            ('top', -y0, -1, False, 90)]:
 
-        for i in range(config['cutout']['launcher_numbers'][side]):
-            ds = config['cutout']['launcher_spacings'][side]
-            xL = sgn*(i - (config['cutout']['launcher_numbers'][side]-1)/2)*ds
-            x, y = xL, xP
-            if flip: x, y = y, x
-            if str(launcher_idx) in config['launcher_to_connector_mapping']:
-                net = int(config['launcher_to_connector_mapping'][str(launcher_idx)][0]) + 1
-                net_name = f'NET_{net-1}'
+    # LAUNCHERS AROUND CUTOUT
+    if 'cutout' in config:
+        margin = config['cutout']['launcher_length'] / 2 + 1.1 * design_rules['min_copper_edge_clearance']
+        x0 = config['cutout']['dimensions'][0] / 2 + margin
+        y0 = config['cutout']['dimensions'][1] / 2 + margin
+        launchers = KiCadStructure(name = 'module', content = ['Launchers'])
+
+        for side, xP, sgn, flip, angle in [
+                ('left',  -x0, 1, True, 180),
+                ('bottom', y0, 1, False, 270),
+                ('right', x0, -1, True, 0),
+                ('top', -y0, -1, False, 90)]:
+
+            for i in range(config['cutout']['launcher_numbers'][side]):
+                ds = config['cutout']['launcher_spacings'][side]
+                xL = sgn*(i - (config['cutout']['launcher_numbers'][side]-1)/2)*ds
+                x, y = xL, xP
+                if flip: x, y = y, x
+                if str(launcher_idx) in config['launcher_to_connector_mapping']:
+                    net = int(config['launcher_to_connector_mapping'][str(launcher_idx)][0]) + 1
+                    net_name = f'NET_{net-1}'
+                else:
+                    net = 0
+                    net_name = '""'
+
+                pad = KiCadStructure.pad_rect(
+                    [pcb_center[0] + x, pcb_center[1] + y, angle],
+                    launcher_idx,
+                    config['cutout']['launcher_length'],
+                    config['cutout']['launcher_width'],
+                    ['F.Cu'], net, net_name)
+                launcher_pads.append(pad)
+                launchers.addAsChild(pad)
+                launcher_idx += 1
+
+        board.addAsChild(launchers)
+
+    # ADDITIONAL LAUNCHERS
+    if 'launchers' in config:
+        for launcher in config['launchers']:
+            launchers = KiCadStructure(name = 'module', content = ['Launchers'])
+            if launcher['pattern_type'] == 'LINEAR':
+                pt1 = np.array(launcher['pattern_start_point'])
+                pt2 = np.array(launcher['pattern_end_point'])
+                angle = launcher['launcher_orientation']
+                for i in range(launcher['pattern_count']):
+                    if str(launcher_idx) in config['launcher_to_connector_mapping']:
+                        net = int(config['launcher_to_connector_mapping'][str(launcher_idx)][0]) + 1
+                        net_name = f'NET_{net-1}'
+                    else:
+                        net = 0
+                        net_name = '""'
+                    pt = pt1 + i*(pt2-pt1)/(launcher['pattern_count']-1)
+                    pad = KiCadStructure.pad_rect(
+                        [pcb_center[0] + pt[0], pcb_center[1] + pt[1], angle],
+                        launcher_idx,
+                        launcher['launcher_length'],
+                        launcher['launcher_width'],
+                        ['F.Cu'], net, net_name)
+                    launcher_pads.append(pad)
+                    launchers.addAsChild(pad)
+                    launcher_idx += 1
             else:
-                net = 0
-                net_name = '""'
+                NotImplementedError(f'Pattern type {launcher["pattern_type"]}')
 
-            pad = KiCadStructure.pad_rect(
-                [pcb_center[0] + x, pcb_center[1] + y, angle],
-                launcher_idx,
-                config['cutout']['launcher_length'],
-                config['cutout']['launcher_width'],
-                ['F.Cu'], net, net_name)
-            launcher_pads.append(pad)
-            launchers.addAsChild(pad)
-            launcher_idx += 1
+            board.addAsChild(launchers)
 
-    board.addAsChild(launchers)
 
     # =====================
 
@@ -280,7 +332,8 @@ for fname in os.listdir(filepath):
     # creating polygon representations of objects on the PCB
     # for plotting and for via distribution
     polys = {
-        'cutout': [shapely.geometry.Polygon(cutout_polygon)],
+        'cutout': [shapely.geometry.Polygon(cutout_polygon)]
+            if cutout_polygon is not None else [],
         'segment': [],
         'pad': [],
         'footprint': []
@@ -330,19 +383,30 @@ for fname in os.listdir(filepath):
     dr = 1.5 * via_diameter
     if config['board_shape'] == 'CIRCULAR':
         R = config['board_diameter']/2
+        for r in np.arange(0, R - 0.5*dr, dr):
+            if r == 0:
+                phi_rng = [0]
+            else:
+                N = int(round(2*np.pi*r / dr))
+                phi_rng = np.linspace(0, 2*np.pi, N+1)[:-1]
+            for phi in phi_rng:
+                pt = [pcb_center[0]+r*np.cos(phi), pcb_center[1]+r*np.sin(phi)]
+                if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
+                    plt.plot(*pt, '.', color = 'green')
+                    board.addVia(*pt, via_diameter, via_drill_diameter, 1)
+
     elif config['board_shape'] == 'RECTANGULAR':
-        R = np.sqrt(config['board_width']**2 + config['board_height']**2)/2
-    for r in np.arange(0, R - 0.5*dr, dr):
-        if r == 0:
-            phi_rng = [0]
-        else:
-            N = int(round(2*np.pi*r / dr))
-            phi_rng = np.linspace(0, 2*np.pi, N+1)[:-1]
-        for phi in phi_rng:
-            pt = [pcb_center[0]+r*np.cos(phi), pcb_center[1]+r*np.sin(phi)]
-            if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
-                plt.plot(*pt, '.', color = 'green')
-                board.addVia(*pt, via_diameter, via_drill_diameter, 1)
+        dy = dr * np.sqrt(3) / 2
+        Ny = int(config['board_height'] / dy) - 1
+        Nx = int(config['board_width'] / dr) - 1
+        for i in range(Ny):
+            y = dy * (i - (Ny-1)/2)
+            for j in range(Nx):
+                x = dr * (j - (Nx-1)/2) + 0.25 * dr * (-1)**(i % 2)
+                pt = [pcb_center[0]+x, pcb_center[1]+y]
+                if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
+                    plt.plot(*pt, '.', color = 'green')
+                    board.addVia(*pt, via_diameter, via_drill_diameter, 1)
 
     plotShapelyPolyLike(ax, poly_buff_combined, facecolor=(0., 0., 1., 0.2))
     plotShapelyPolyLike(ax, poly_combined, facecolor=(0., 0., 0., 0.2))

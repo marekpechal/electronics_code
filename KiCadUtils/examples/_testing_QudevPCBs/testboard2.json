@@ -13,7 +13,7 @@
         "pattern_start_point": [-25.0, -16.0],
         "pattern_end_point": [25.0, 12.0],
         "pattern_count": 5,
-        "footprint_orientation": 0
+        "footprint_orientation": 90
       }
     ],
   "holes": [

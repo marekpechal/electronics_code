@@ -96,14 +96,19 @@ class KiCadStructure(Structure):
 
     def getCircle(self, Npoints = 40):
         T = self.getTransformation()
-        w, h = [float(s) for s in self['size'].content]
-        r = (w + h) / 4
+        if len(self['size'].content) == 1:
+            r = float(self['size'].content[0])
+        else:
+            w, h = [float(s) for s in self['size'].content]
+            r = (w + h) / 4
         return T.translation_vector + r*np.array([[np.cos(u), np.sin(u)]
             for u in np.linspace(0, 2*np.pi, Npoints+1)[:-1]])
 
     def toPolygon(self):
         if self.name == 'segment':
             return self.getSegment()
+        elif self.name == 'via':
+            return self.getCircle()
         elif self.name == 'pad':
             if (self.content[1] in ['thru_hole', 'np_thru_hole'] and
                 self.content[2] == 'circle'):
@@ -118,70 +123,71 @@ class KiCadStructure(Structure):
             raise NotImplementedError(f'{self.name}')
 
 
-    def toPolys(self, recursive = False, **kwargs): # does not handle all geometry
-        layers = {}
-
-        if recursive:
-            objects = self.walk(**kwargs)
-        else:
-            objects = self.getChildren
-
-        for entry in self.walk():
-            if entry.name == 'zone':
-                layer = list(entry['layer'])[0].content[0]
-                if not layer in layers:
-                    layers[layer] = []
-                for child in entry.children:
-                    if child.name == 'filled_polygon':
-                        pts = np.array([[float(s) for s in pos.content] for pos in list(child['pts'])[0].children])
-                        layers[layer].append(pts)
-
-            if entry.name == 'segment':
-                layer = list(entry['layer'])[0].content[0]
-                if not layer in layers:
-                    layers[layer] = []
-                poly = _segmentToPoly(
-                    [float(s) for s in list(entry['start'])[0].content],
-                    [float(s) for s in list(entry['end'])[0].content],
-                    float(list(entry['width'])[0].content[0]))
-                if poly is not None:
-                    layers[layer].append(poly)
-
-            if entry.name == 'module':
-                lst = list(entry['at'])
-                if lst:
-                    p = [float(s) for s in lst[0].content]
-                    if len(p) == 3:
-                        x0, y0, angle0 = p
-                    else:
-                        x0, y0 = p
-                        angle0 = 0
-                else:
-                    x0, y0, angle0 = 0, 0, 0
-                for child in entry.children:
-                    if child.name == 'pad':
-                        lst = list(child['at'])
-                        if lst:
-                            p = [float(s) for s in lst[0].content]
-                            if len(p) == 3:
-                                x1, y1, angle1 = p
-                            else:
-                                x1, y1 = p
-                                angle1 = 0
-                        else:
-                            x1, y1, angle1 = 0, 0, 0
-                        w, h = [float(s) for s in list(child['size'])[0].content]
-                        x = x0 + x1 * np.cos(angle0 * np.pi / 180) + y1 * np.sin(angle0 * np.pi / 180)
-                        y = y0 + y1 * np.cos(angle0 * np.pi / 180) - x1 * np.sin(angle0 * np.pi / 180)
-                        ex = np.array([np.cos(angle1 * np.pi / 180), np.sin(angle1 * np.pi / 180)])
-                        ey = np.array([1., -1.]) * ex[::-1]
-                        poly = np.array([x, y]) + np.array([
-                            -0.5*w*ex-0.5*h*ey, 0.5*w*ex-0.5*h*ey, 0.5*w*ex+0.5*h*ey, -0.5*w*ex+0.5*h*ey])
-                        for layer in list(child['layers'])[0].content:
-                            if not layer in layers:
-                                layers[layer] = []
-                            layers[layer].append(poly)
-        return layers
+    # DEPRECTATED; to be removed later
+    # def toPolys(self, recursive = False, **kwargs): # does not handle all geometry
+    #     layers = {}
+    #
+    #     if recursive:
+    #         objects = self.walk(**kwargs)
+    #     else:
+    #         objects = self.getChildren
+    #
+    #     for entry in self.walk():
+    #         if entry.name == 'zone':
+    #             layer = list(entry['layer'])[0].content[0]
+    #             if not layer in layers:
+    #                 layers[layer] = []
+    #             for child in entry.children:
+    #                 if child.name == 'filled_polygon':
+    #                     pts = np.array([[float(s) for s in pos.content] for pos in list(child['pts'])[0].children])
+    #                     layers[layer].append(pts)
+    #
+    #         if entry.name == 'segment':
+    #             layer = list(entry['layer'])[0].content[0]
+    #             if not layer in layers:
+    #                 layers[layer] = []
+    #             poly = _segmentToPoly(
+    #                 [float(s) for s in list(entry['start'])[0].content],
+    #                 [float(s) for s in list(entry['end'])[0].content],
+    #                 float(list(entry['width'])[0].content[0]))
+    #             if poly is not None:
+    #                 layers[layer].append(poly)
+    #
+    #         if entry.name == 'module':
+    #             lst = list(entry['at'])
+    #             if lst:
+    #                 p = [float(s) for s in lst[0].content]
+    #                 if len(p) == 3:
+    #                     x0, y0, angle0 = p
+    #                 else:
+    #                     x0, y0 = p
+    #                     angle0 = 0
+    #             else:
+    #                 x0, y0, angle0 = 0, 0, 0
+    #             for child in entry.children:
+    #                 if child.name == 'pad':
+    #                     lst = list(child['at'])
+    #                     if lst:
+    #                         p = [float(s) for s in lst[0].content]
+    #                         if len(p) == 3:
+    #                             x1, y1, angle1 = p
+    #                         else:
+    #                             x1, y1 = p
+    #                             angle1 = 0
+    #                     else:
+    #                         x1, y1, angle1 = 0, 0, 0
+    #                     w, h = [float(s) for s in list(child['size'])[0].content]
+    #                     x = x0 + x1 * np.cos(angle0 * np.pi / 180) + y1 * np.sin(angle0 * np.pi / 180)
+    #                     y = y0 + y1 * np.cos(angle0 * np.pi / 180) - x1 * np.sin(angle0 * np.pi / 180)
+    #                     ex = np.array([np.cos(angle1 * np.pi / 180), np.sin(angle1 * np.pi / 180)])
+    #                     ey = np.array([1., -1.]) * ex[::-1]
+    #                     poly = np.array([x, y]) + np.array([
+    #                         -0.5*w*ex-0.5*h*ey, 0.5*w*ex-0.5*h*ey, 0.5*w*ex+0.5*h*ey, -0.5*w*ex+0.5*h*ey])
+    #                     for layer in list(child['layers'])[0].content:
+    #                         if not layer in layers:
+    #                             layers[layer] = []
+    #                         layers[layer].append(poly)
+    #     return layers
 
     # UNPACKING AND MODIFYING COORDINATES
 

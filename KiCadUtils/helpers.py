@@ -89,7 +89,6 @@ def distributePointsOnPath(path, separation, init_gap = 0.0, fin_gap = 0.0):
     length_array = np.concatenate(([0.0],
         np.cumsum(np.linalg.norm(path[1:] - path[:-1], axis = 1))))
     total_length = length_array[-1]
-    print(len(length_array), len(path))
     interp_func = scipy.interpolate.interp1d(length_array, path, axis = 0)
     x0 = init_gap
     x1 = total_length - fin_gap

@@ -5,6 +5,9 @@ sys.path.insert(-1, libpath)
 
 # TODO: check why demo from testboard.json gives DRC violations (likely
 # incorrectly assigned netclass)
+# TODO: instead of hard-coding trace width, read it from template project file
+# TODO: instead of hard-coding via dimensions, read them from .json
+# TODO: instead of hard-coding limits for via fence distribution, use the footprint polygons for exclusion
 
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
@@ -14,7 +17,7 @@ from matplotlib.collections import PatchCollection
 import shapely
 import shapely.geometry, shapely.ops
 
-from helper import plotShapelyPolygon, plotShapelyPolyLike
+from helpers import plotShapelyPolygon, plotShapelyPolyLike, offsetPath, distributePointsOnPath
 from KiCadStructure import KiCadStructure, _rotation_matrix
 from lqd_routing import RouteDescription
 import Footprints
@@ -269,6 +272,10 @@ for fname in os.listdir(filepath):
 
     # =====================
 
+    via_diameter = 0.5
+    via_drill_diameter = 0.3
+
+
     # placing traces joining connectors with launchers
     for conn_pad_idx, pad in enumerate(connector_pads):
         key = str(conn_pad_idx + 1)
@@ -286,7 +293,7 @@ for fname in os.listdir(filepath):
             pt2 = conn_pad_T.translation_vector
             dir2 = conn_pad_T.rotation_angle
 
-            bend_radius = 2.0
+            bend_radius = config['trace_bend_radius']
             cmd = config['launcher_to_connector_mapping'][key][1]
             cmd = cmd.translate({114: 108, 108: 114}) # swap 'r' <-> 'l'
             route = RouteDescription.between_points(pt1, -dir1, pt2, -dir2,
@@ -299,6 +306,17 @@ for fname in os.listdir(filepath):
                 [route.point(s)[0] for s in np.linspace(1e-6, route.length()-1e-6, 101)])
             board.addPolySegment(poly, 0.17, 'F.Cu', int(key) + 1)
             plt.plot(poly[:, 0], -poly[:, 1], color = 'black')
+
+            pts = np.concatenate((
+                distributePointsOnPath(offsetPath(poly, +0.50), 0.65,
+                    init_gap = 0.50, fin_gap = 2.50),
+                distributePointsOnPath(offsetPath(poly, -0.50), 0.65,
+                    init_gap = 0.50, fin_gap = 2.50)
+                ))
+            for pt in pts:
+                board.addVia(*pt, via_diameter, via_drill_diameter, 1)
+
+            plt.plot(pts[:, 0], -pts[:, 1], 'k.')
 
     for pad in connector_pads + launcher_pads:
         pad_T = pad.getTransformation()
@@ -322,12 +340,13 @@ for fname in os.listdir(filepath):
             if cutout_polygon is not None else [],
         'segment': [],
         'pad': [],
+        'via': [],
         'footprint': []
         }
 
     # convert segments and pads
     for obj in board.filter(
-            name_filter = (lambda s: s in ['segment', 'pad']),
+            name_filter = (lambda s: s in ['segment', 'pad', 'via']),
             layer_filter = (lambda c: 'F.Cu' in c or 'B.Cu' in c or '*.Cu' in c),
             recursive = True,
             check = lambda obj: obj.name != 'footprint'):
@@ -346,13 +365,12 @@ for fname in os.listdir(filepath):
         polys['footprint'].append(shapely.geometry.MultiPoint(points).convex_hull)
 
     # parameters for via distribution
-    via_diameter = 0.5
-    via_drill_diameter = 0.3
     clearances = {
         'cutout': 0.1,
         'segment': 0.25,
         'pad': 0.25,
-        'footprint': 0.1
+        'footprint': 0.1,
+        'via': 0.1
         }
 
     buffer_distance = via_diameter / 2

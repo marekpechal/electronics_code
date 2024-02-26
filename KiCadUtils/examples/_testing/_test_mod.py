@@ -6,6 +6,10 @@ sys.path.insert(-1, libpath)
 from KiCadStructure import KiCadStructure
 import os
 
+# Load pcb file into KiCadStructure, modify it (adding some vias) and
+# save into a new file. The test is passed if the output file can be
+# opened in KiCad.
+
 input_filename = 'DemoPCB.kicad_pcb'
 output_filename = '_copy.kicad_pcb'
 

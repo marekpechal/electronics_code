@@ -7,6 +7,10 @@ from KiCadStructure import KiCadStructure
 from Footprints import SMP_19S102_40ML5_2layer_508um_AD1000
 import numpy as np
 
+# Load an empty KiCad pcb file as a template into a KiCadStructure,
+# then populate it with content and save. Test is passed if the output file
+# can be opened in KiCad.
+
 template_filename = 'Template.kicad_pcb'
 output_filename = '_test.kicad_pcb'
 

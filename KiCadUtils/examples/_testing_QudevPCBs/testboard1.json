@@ -3,6 +3,7 @@
   "board_comments": "Cavity to be milled only through top copper and dielectric. Bottom copper to be left intact.",
   "board_shape": "CIRCULAR",
   "board_diameter": 49.8,
+  "trace_bend_radius": 2.0,
   "cutout": {
     "shape": "RECTANGULAR",
     "dimensions": [14.5, 6.8],

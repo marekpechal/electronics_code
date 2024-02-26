@@ -6,6 +6,9 @@ sys.path.insert(-1, libpath)
 from KiCadStructure import KiCadStructure
 import os
 
+# Load a pcb file into a KiCadStructure, then save into a new file
+# and compare the contents of the two files.
+
 def simplify_string(s):
     # remove \n and \t
     s = s.replace('\t', '').replace('\n', '')

@@ -1,0 +1,3 @@
+`_test_generate_PCB.py` is the main script which should loop over all `.json` files in this directory and for each of them generate a KiCad pcb file (`.kicad_pcb`) in the `output` directory (may need to be created manually).
+
+`lqd_routing.py`, `qdl_coordinate.py`, `qdl_helper.py` and `qdl_placement.py` are a minimal set of files picked out of `qdl` and `libqudev` to be able to use the routing functionality. It may be useful to restructure `libqudev/routing` at some point in a way that the low-level routing function can be used on its own without having to import all the bells and whistles (ports, placement, etc.)

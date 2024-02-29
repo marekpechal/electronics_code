@@ -41,5 +41,9 @@
         "launcher_length": 0.5,
         "launcher_width": 0.2
       }
-    ]
+    ],
+    "via_parameters": {
+      "fences": {"diameter": 0.5, "drill_diameter": 0.3, "spacing": 0.65},
+      "stitching": {"diameter": 0.5, "drill_diameter": 0.3, "spacing": 1.2}
+      }
 }

@@ -12,10 +12,10 @@
     },
   "connectors": [
       {
-        "footprint": "SMP_19S102_40ML5_2layer_508um_AD1000",
+        "footprint": "SMP_19S202_40ML5_2layer_508um_AD1000",
         "pattern_type": "LINEAR",
-        "pattern_start_point": [-10.0, 10.0],
-        "pattern_end_point": [25.0, 10.0],
+        "pattern_start_point": [-10.0, 15.0],
+        "pattern_end_point": [25.0, 15.0],
         "pattern_count": 3,
         "footprint_orientation": 90
       }
@@ -36,5 +36,9 @@
         "launcher_length": 0.5,
         "launcher_width": 0.2
       }
-    ]
+    ],
+  "via_parameters": {
+    "fences": {"diameter": 0.5, "drill_diameter": 0.3, "spacing": 0.65},
+    "stitching": {"diameter": 0.5, "drill_diameter": 0.3, "spacing": 1.2}
+    }
 }

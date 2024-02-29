@@ -58,5 +58,9 @@
         "pattern_relative_rotation": 0.0,
         "drill_diameter": 2.0
       }
-    ]
+    ],
+  "via_parameters": {
+    "fences": {"diameter": 0.5, "drill_diameter": 0.3, "spacing": 0.65},
+    "stitching": {"diameter": 0.5, "drill_diameter": 0.3, "spacing": 1.2}
+    }
 }

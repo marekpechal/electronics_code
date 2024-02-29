@@ -6,7 +6,6 @@ sys.path.insert(-1, libpath)
 # TODO: check why demo from testboard.json gives DRC violations (likely
 # incorrectly assigned netclass)
 # TODO: instead of hard-coding trace width, read it from template project file
-# TODO: instead of hard-coding via dimensions, read them from .json
 # TODO: instead of hard-coding limits for via fence distribution, use the footprint polygons for exclusion
 
 import matplotlib.pyplot as plt
@@ -322,8 +321,8 @@ for fname in os.listdir(filepath):
 
     # =====================
 
-    via_diameter = 0.5
-    via_drill_diameter = 0.3
+    #via_diameter = 0.5
+    #via_drill_diameter = 0.3
 
 
     # placing traces joining connectors with launchers
@@ -358,13 +357,18 @@ for fname in os.listdir(filepath):
             plt.plot(poly[:, 0], -poly[:, 1], color = 'black')
 
             pts = np.concatenate((
-                distributePointsOnPath(offsetPath(poly, +0.50), 0.65,
+                distributePointsOnPath(offsetPath(poly, +0.50),
+                    config['via_parameters']['fences']['spacing'],
                     init_gap = 0.50, fin_gap = 2.50),
-                distributePointsOnPath(offsetPath(poly, -0.50), 0.65,
+                distributePointsOnPath(offsetPath(poly, -0.50),
+                    config['via_parameters']['fences']['spacing'],
                     init_gap = 0.50, fin_gap = 2.50)
                 ))
             for pt in pts:
-                board.addVia(*pt, via_diameter, via_drill_diameter, 1)
+                board.addVia(*pt,
+                    config['via_parameters']['fences']['diameter'],
+                    config['via_parameters']['fences']['drill_diameter'],
+                    1)
 
             plt.plot(pts[:, 0], -pts[:, 1], 'k.')
 
@@ -423,18 +427,18 @@ for fname in os.listdir(filepath):
         'via': 0.1
         }
 
-    buffer_distance = via_diameter / 2
     poly_combined = shapely.ops.unary_union([poly
         for name, lst in polys.items() for poly in lst])
     poly_buff_combined = shapely.ops.unary_union(
-        [poly.buffer(clearances[name] + via_diameter/2)
+        [poly.buffer(clearances[name]
+            + config['via_parameters']['stitching']['diameter']/2)
         for name, lst in polys.items() for poly in lst])
 
 
     fig, ax = plt.subplots()
 
     # plot and distribute vias
-    dr = 1.5 * via_diameter
+    dr = config['via_parameters']['stitching']['spacing']
     if config['board_shape'] == 'CIRCULAR':
         R = config['board_diameter']/2
         for r in np.arange(0, R - 0.5*dr, dr):
@@ -447,25 +451,19 @@ for fname in os.listdir(filepath):
                 pt = [pcb_center[0]+r*np.cos(phi), pcb_center[1]+r*np.sin(phi)]
                 if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
                     plt.plot(pt[0], -pt[1], '.', color = 'green')
-                    board.addVia(*pt, via_diameter, via_drill_diameter, 1)
+                    board.addVia(*pt,
+                        config['via_parameters']['stitching']['diameter'],
+                        config['via_parameters']['stitching']['drill_diameter'],
+                        1)
 
     else:
         for pt in distributePointsInPolygon(outline_points, dr, margin = dr/2):
             if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
                 plt.plot(pt[0], -pt[1], '.', color = 'green')
-                board.addVia(*pt, via_diameter, via_drill_diameter, 1)
-    # elif config['board_shape'] == 'RECTANGULAR':
-    #     dy = dr * np.sqrt(3) / 2
-    #     Ny = int(config['board_height'] / dy) - 1
-    #     Nx = int(config['board_width'] / dr) - 1
-    #     for i in range(Ny):
-    #         y = dy * (i - (Ny-1)/2)
-    #         for j in range(Nx):
-    #             x = dr * (j - (Nx-1)/2) + 0.25 * dr * (-1)**(i % 2)
-    #             pt = [pcb_center[0]+x, pcb_center[1]+y]
-    #             if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
-    #                 plt.plot(pt[0], -pt[1], '.', color = 'green')
-    #                 board.addVia(*pt, via_diameter, via_drill_diameter, 1)
+                board.addVia(*pt,
+                    config['via_parameters']['stitching']['diameter'],
+                    config['via_parameters']['stitching']['drill_diameter'],
+                    1)
 
     plotShapelyPolyLike(ax, poly_buff_combined, facecolor=(0., 0., 1., 0.2))
     plotShapelyPolyLike(ax, poly_combined, facecolor=(0., 0., 0., 0.2))

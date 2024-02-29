@@ -105,8 +105,8 @@ def distributePointsInPolygon(poly, grid_size,
     y0 = (y1 + y2) / 2
     if pattern_type == 'triangular':
         dy = grid_size * np.sqrt(3) / 2
-        Ny = int(h / dy) - 1
-        Nx = int(w / grid_size) - 1
+        Ny = int(h / dy) + 1
+        Nx = int(w / grid_size) + 1
         for i in range(Ny):
             y = dy * (i - (Ny-1)/2)
             for j in range(Nx):

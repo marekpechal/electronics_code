@@ -75,6 +75,41 @@ for fname in os.listdir(filepath):
                 pcb_center[0]-pcb_width/2, pcb_center[1]-pcb_height/2,
                 pcb_center[0]+pcb_width/2, pcb_center[1]+pcb_height/2,
                 clearance = clearance))
+    elif isinstance(config['board_shape'], list): # custom shape
+        point_list = []
+        for command, *params in config['board_shape']:
+            if command == 'start':
+                last_point = [params[0]+pcb_center[0], params[1]+pcb_center[1]]
+            elif command == 'line_to':
+                new_point = [params[0]+pcb_center[0], params[1]+pcb_center[1]]
+                board.addEdgeCutLine(*last_point, *new_point)
+                last_point = new_point
+                point_list.append(new_point)
+            elif command == 'arc_to':
+                new_point = [params[0]+pcb_center[0], params[1]+pcb_center[1]]
+                radius = params[2]
+                ex = np.array(new_point) - np.array(last_point)
+                d = np.linalg.norm(ex)
+                h = np.sqrt(radius**2 - (0.5*d)**2) * radius / abs(radius)
+                ex = ex / d
+                ey = np.array([[0, -1], [1, 0]]).dot(ex)
+                ctr = np.array(last_point) + 0.5 * d * ex - h * ey
+                theta = np.arcsin(0.5 * d / radius)
+                pts = []
+                for phi in np.linspace(-theta, theta, 41)[0:]:
+                    pts.append(list(
+                        ctr + (ey*np.cos(phi)+ex*np.sin(phi))*radius))
+                board.addEdgeCutPolyLine(pts)
+                last_point = new_point
+                point_list += pts
+        for layer, net, net_name, clearance in [
+                ('F.Cu', gnd_net_idx, 'GND', 0.05),
+                ('B.Cu', gnd_net_idx, 'GND', 0.05),
+                ('F.Mask', 0, '""', None),
+                ('B.Mask', 0, '""', None)]:
+            board.addAsChild(KiCadStructure.filledZone(
+                net, net_name, layer, point_list, clearance = clearance))
+
     else:
         raise NotImplementedError(f'Board shape {config["board_shape"]}')
 
@@ -84,51 +119,55 @@ for fname in os.listdir(filepath):
     elif config['cutout']['shape'] == 'RECTANGULAR':
         cutout_w, cutout_h = config['cutout']['dimensions']
         relief_r = config['cutout']['internal_relief_diameter']
+        if 'center' in config['cutout']:
+            x0, y0 = config['cutout']['center']
+        else:
+            x0, y0 = 0, 0
         d = relief_r*np.sqrt(2)
         board.addEdgeCutLine(
-            pcb_center[0]-cutout_w/2+d, pcb_center[1]-cutout_h/2,
-            pcb_center[0]+cutout_w/2-d, pcb_center[1]-cutout_h/2
+            x0+pcb_center[0]-cutout_w/2+d, y0+pcb_center[1]-cutout_h/2,
+            x0+pcb_center[0]+cutout_w/2-d, y0+pcb_center[1]-cutout_h/2
             )
         board.addEdgeCutArc(
-            [pcb_center[0]+cutout_w/2-d, pcb_center[1]-cutout_h/2],
-            [pcb_center[0]+cutout_w/2, pcb_center[1]-cutout_h/2],
-            [pcb_center[0]+cutout_w/2, pcb_center[1]-cutout_h/2+d]
+            [x0+pcb_center[0]+cutout_w/2-d, y0+pcb_center[1]-cutout_h/2],
+            [x0+pcb_center[0]+cutout_w/2, y0+pcb_center[1]-cutout_h/2],
+            [x0+pcb_center[0]+cutout_w/2, y0+pcb_center[1]-cutout_h/2+d]
             )
         board.addEdgeCutLine(
-            pcb_center[0]+cutout_w/2, pcb_center[1]-cutout_h/2+d,
-            pcb_center[0]+cutout_w/2, pcb_center[1]+cutout_h/2-d
+            x0+pcb_center[0]+cutout_w/2, y0+pcb_center[1]-cutout_h/2+d,
+            x0+pcb_center[0]+cutout_w/2, y0+pcb_center[1]+cutout_h/2-d
             )
         board.addEdgeCutArc(
-            [pcb_center[0]+cutout_w/2, pcb_center[1]+cutout_h/2-d],
-            [pcb_center[0]+cutout_w/2, pcb_center[1]+cutout_h/2],
-            [pcb_center[0]+cutout_w/2-d, pcb_center[1]+cutout_h/2]
+            [x0+pcb_center[0]+cutout_w/2, y0+pcb_center[1]+cutout_h/2-d],
+            [x0+pcb_center[0]+cutout_w/2, y0+pcb_center[1]+cutout_h/2],
+            [x0+pcb_center[0]+cutout_w/2-d, y0+pcb_center[1]+cutout_h/2]
             )
         board.addEdgeCutLine(
-            pcb_center[0]+cutout_w/2-d, pcb_center[1]+cutout_h/2,
-            pcb_center[0]-cutout_w/2+d, pcb_center[1]+cutout_h/2
+            x0+pcb_center[0]+cutout_w/2-d, y0+pcb_center[1]+cutout_h/2,
+            x0+pcb_center[0]-cutout_w/2+d, y0+pcb_center[1]+cutout_h/2
             )
         board.addEdgeCutArc(
-            [pcb_center[0]-cutout_w/2+d, pcb_center[1]+cutout_h/2],
-            [pcb_center[0]-cutout_w/2, pcb_center[1]+cutout_h/2],
-            [pcb_center[0]-cutout_w/2, pcb_center[1]+cutout_h/2-d]
+            [x0+pcb_center[0]-cutout_w/2+d, y0+pcb_center[1]+cutout_h/2],
+            [x0+pcb_center[0]-cutout_w/2, y0+pcb_center[1]+cutout_h/2],
+            [x0+pcb_center[0]-cutout_w/2, y0+pcb_center[1]+cutout_h/2-d]
             )
         board.addEdgeCutLine(
-            pcb_center[0]-cutout_w/2, pcb_center[1]+cutout_h/2-d,
-            pcb_center[0]-cutout_w/2, pcb_center[1]-cutout_h/2+d
+            x0+pcb_center[0]-cutout_w/2, y0+pcb_center[1]+cutout_h/2-d,
+            x0+pcb_center[0]-cutout_w/2, y0+pcb_center[1]-cutout_h/2+d
             )
         board.addEdgeCutArc(
-            [pcb_center[0]-cutout_w/2, pcb_center[1]-cutout_h/2+d],
-            [pcb_center[0]-cutout_w/2, pcb_center[1]-cutout_h/2],
-            [pcb_center[0]-cutout_w/2+d, pcb_center[1]-cutout_h/2]
+            [x0+pcb_center[0]-cutout_w/2, y0+pcb_center[1]-cutout_h/2+d],
+            [x0+pcb_center[0]-cutout_w/2, y0+pcb_center[1]-cutout_h/2],
+            [x0+pcb_center[0]-cutout_w/2+d, y0+pcb_center[1]-cutout_h/2]
             )
         cutout_polygon = np.concatenate((
-            [[-cutout_w/2+d/2+relief_r*np.cos(u), -cutout_h/2+d/2+relief_r*np.sin(u)]
+            [[x0-cutout_w/2+d/2+relief_r*np.cos(u), y0-cutout_h/2+d/2+relief_r*np.sin(u)]
                 for u in np.linspace(3*np.pi/4, 7*np.pi/4, 21)],
-            [[+cutout_w/2-d/2+relief_r*np.cos(u), -cutout_h/2+d/2+relief_r*np.sin(u)]
+            [[x0+cutout_w/2-d/2+relief_r*np.cos(u), y0-cutout_h/2+d/2+relief_r*np.sin(u)]
                 for u in np.linspace(5*np.pi/4, 9*np.pi/4, 21)],
-            [[+cutout_w/2-d/2+relief_r*np.cos(u), +cutout_h/2-d/2+relief_r*np.sin(u)]
+            [[x0+cutout_w/2-d/2+relief_r*np.cos(u), y0+cutout_h/2-d/2+relief_r*np.sin(u)]
                 for u in np.linspace(7*np.pi/4, 11*np.pi/4, 21)],
-            [[-cutout_w/2+d/2+relief_r*np.cos(u), +cutout_h/2-d/2+relief_r*np.sin(u)]
+            [[x0-cutout_w/2+d/2+relief_r*np.cos(u), y0+cutout_h/2-d/2+relief_r*np.sin(u)]
                 for u in np.linspace(9*np.pi/4, 13*np.pi/4, 21)]
             )) + np.array(pcb_center)
     else:
@@ -197,15 +236,19 @@ for fname in os.listdir(filepath):
     # LAUNCHERS AROUND CUTOUT
     if 'cutout' in config:
         margin = config['cutout']['launcher_length'] / 2 + 1.1 * design_rules['min_copper_edge_clearance']
-        x0 = config['cutout']['dimensions'][0] / 2 + margin
-        y0 = config['cutout']['dimensions'][1] / 2 + margin
+        X = config['cutout']['dimensions'][0] / 2 + margin
+        Y = config['cutout']['dimensions'][1] / 2 + margin
+        if 'center' in config['cutout']:
+            x0, y0 = config['cutout']['center']
+        else:
+            x0, y0 = 0, 0
         launchers = KiCadStructure(name = 'module', content = ['Launchers'])
 
         for side, xP, sgn, flip, angle in [
-                ('left',  -x0, 1, True, 180),
-                ('bottom', y0, 1, False, 270),
-                ('right', x0, -1, True, 0),
-                ('top', -y0, -1, False, 90)]:
+                ('left',  -X, 1, True, 180),
+                ('bottom', Y, 1, False, 270),
+                ('right', X, -1, True, 0),
+                ('top', -Y, -1, False, 90)]:
 
             for i in range(config['cutout']['launcher_numbers'][side]):
                 ds = config['cutout']['launcher_spacings'][side]
@@ -220,7 +263,7 @@ for fname in os.listdir(filepath):
                     net_name = '""'
 
                 pad = KiCadStructure.pad_rect(
-                    [pcb_center[0] + x, pcb_center[1] + y, angle],
+                    [pcb_center[0] + x0 + x, pcb_center[1] + y0 + y, angle],
                     launcher_idx,
                     config['cutout']['launcher_length'],
                     config['cutout']['launcher_width'],
@@ -235,6 +278,7 @@ for fname in os.listdir(filepath):
     if 'launchers' in config:
         for launcher in config['launchers']:
             margin = launcher['launcher_length'] / 2 + 1.1 * design_rules['min_copper_edge_clearance']
+            eval_namespace = {}
             if config['board_shape'] == 'RECTANGULAR':
                 eval_namespace = {
                     'left_edge': -config['board_width']/2 + margin,

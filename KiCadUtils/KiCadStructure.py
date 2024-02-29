@@ -325,6 +325,10 @@ class KiCadStructure(Structure):
     def addEdgeCutCircle(self, xc, yc, radius):
         self.addGraphicalCircle(xc, yc, radius, 0.05, 'Edge.Cuts')
 
+    def addEdgeCutPolyLine(self, pts):
+        for i in range(len(pts) - 1):
+            self.addEdgeCutLine(pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1])
+
     def addEdgeCutRectangle(self, x1, y1, x2, y2):
         self.addEdgeCutLine(x1, y1, x2, y1)
         self.addEdgeCutLine(x2, y1, x2, y2)

@@ -72,3 +72,43 @@ class SMP_19S102_40ML5_2layer_508um_AD1000(KiCadStructure):
             'F.Cu', ['copperpour', 'footprints'], [[x, -y] for x, y in pts]))
 
         # END FOOTPRINT DEFINITION
+
+
+class SMP_19S202_40ML5_2layer_508um_AD1000(KiCadStructure):
+    def __init__(self, **kwargs):
+
+        KiCadStructure.__init__(self, name = 'footprint', content = [
+            'SMP'
+            ])
+
+        self.addChild(cls = KiCadStructure, name = 'layer', content = ['F.Cu'])
+
+        via_diameter = 0.5
+        via_drill_diameter = 0.2
+        gnd_net_idx = 1
+
+
+        # adding vias
+        footprint_via_positions = [
+            [0.6, -1.6], [1.6, -1.6], [2.6, -1.6],
+            [0.6, -2.3], [1.6, -2.3], [2.6, -2.3],
+            [0.6, +1.6], [1.6, +1.6], [2.6, +1.6],
+            [0.6, +2.3], [1.6, +2.3], [2.6, +2.3]
+            ]
+        for pt in footprint_via_positions:
+            self.addAsChild(KiCadStructure.pad_th(
+                pt, 0, via_diameter, via_drill_diameter, ['F.Cu', 'B.Cu'], gnd_net_idx, 'GND'))
+
+        # pad
+        self.addAsChild(KiCadStructure.pad_rect(
+            [1.6, 0, 0], 1, 3.2, 0.5, ['F.Cu'], 0, '""'))
+
+        # central keepout
+        pts = [
+            [0.0, -1.25], [0.0, 1.25], [3.3, 1.25], [3.3, -1.25]
+            ]
+        self.addAsChild(KiCadStructure.ruleArea(
+            'F.Cu', ['copperpour', 'footprints'], pts))
+
+
+        # END FOOTPRINT DEFINITION

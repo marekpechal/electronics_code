@@ -17,7 +17,7 @@ from matplotlib.collections import PatchCollection
 import shapely
 import shapely.geometry, shapely.ops
 
-from helpers import plotShapelyPolygon, plotShapelyPolyLike, offsetPath, distributePointsOnPath
+from helpers import plotShapelyPolygon, plotShapelyPolyLike, offsetPath, distributePointsOnPath, distributePointsInPolygon
 from KiCadStructure import KiCadStructure, _rotation_matrix
 from lqd_routing import RouteDescription
 import Footprints
@@ -62,6 +62,12 @@ for fname in os.listdir(filepath):
     elif config['board_shape'] == 'RECTANGULAR':
         pcb_width = config['board_width']
         pcb_height = config['board_height']
+        outline_points = [
+            [pcb_center[0]-pcb_width/2, pcb_center[1]-pcb_height/2],
+            [pcb_center[0]+pcb_width/2, pcb_center[1]-pcb_height/2],
+            [pcb_center[0]+pcb_width/2, pcb_center[1]+pcb_height/2],
+            [pcb_center[0]-pcb_width/2, pcb_center[1]+pcb_height/2]
+            ]
         board.addEdgeCutRectangle(
             pcb_center[0]-pcb_width/2, pcb_center[1]-pcb_height/2,
             pcb_center[0]+pcb_width/2, pcb_center[1]+pcb_height/2)
@@ -76,7 +82,7 @@ for fname in os.listdir(filepath):
                 pcb_center[0]+pcb_width/2, pcb_center[1]+pcb_height/2,
                 clearance = clearance))
     elif isinstance(config['board_shape'], list): # custom shape
-        point_list = []
+        outline_points = []
         for command, *params in config['board_shape']:
             if command == 'start':
                 last_point = [params[0]+pcb_center[0], params[1]+pcb_center[1]]
@@ -84,7 +90,7 @@ for fname in os.listdir(filepath):
                 new_point = [params[0]+pcb_center[0], params[1]+pcb_center[1]]
                 board.addEdgeCutLine(*last_point, *new_point)
                 last_point = new_point
-                point_list.append(new_point)
+                outline_points.append(new_point)
             elif command == 'arc_to':
                 new_point = [params[0]+pcb_center[0], params[1]+pcb_center[1]]
                 radius = params[2]
@@ -101,14 +107,14 @@ for fname in os.listdir(filepath):
                         ctr + (ey*np.cos(phi)+ex*np.sin(phi))*radius))
                 board.addEdgeCutPolyLine(pts)
                 last_point = new_point
-                point_list += pts
+                outline_points += pts
         for layer, net, net_name, clearance in [
                 ('F.Cu', gnd_net_idx, 'GND', 0.05),
                 ('B.Cu', gnd_net_idx, 'GND', 0.05),
                 ('F.Mask', 0, '""', None),
                 ('B.Mask', 0, '""', None)]:
             board.addAsChild(KiCadStructure.filledZone(
-                net, net_name, layer, point_list, clearance = clearance))
+                net, net_name, layer, outline_points, clearance = clearance))
 
     else:
         raise NotImplementedError(f'Board shape {config["board_shape"]}')
@@ -443,18 +449,23 @@ for fname in os.listdir(filepath):
                     plt.plot(pt[0], -pt[1], '.', color = 'green')
                     board.addVia(*pt, via_diameter, via_drill_diameter, 1)
 
-    elif config['board_shape'] == 'RECTANGULAR':
-        dy = dr * np.sqrt(3) / 2
-        Ny = int(config['board_height'] / dy) - 1
-        Nx = int(config['board_width'] / dr) - 1
-        for i in range(Ny):
-            y = dy * (i - (Ny-1)/2)
-            for j in range(Nx):
-                x = dr * (j - (Nx-1)/2) + 0.25 * dr * (-1)**(i % 2)
-                pt = [pcb_center[0]+x, pcb_center[1]+y]
-                if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
-                    plt.plot(pt[0], -pt[1], '.', color = 'green')
-                    board.addVia(*pt, via_diameter, via_drill_diameter, 1)
+    else:
+        for pt in distributePointsInPolygon(outline_points, dr, margin = dr/2):
+            if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
+                plt.plot(pt[0], -pt[1], '.', color = 'green')
+                board.addVia(*pt, via_diameter, via_drill_diameter, 1)
+    # elif config['board_shape'] == 'RECTANGULAR':
+    #     dy = dr * np.sqrt(3) / 2
+    #     Ny = int(config['board_height'] / dy) - 1
+    #     Nx = int(config['board_width'] / dr) - 1
+    #     for i in range(Ny):
+    #         y = dy * (i - (Ny-1)/2)
+    #         for j in range(Nx):
+    #             x = dr * (j - (Nx-1)/2) + 0.25 * dr * (-1)**(i % 2)
+    #             pt = [pcb_center[0]+x, pcb_center[1]+y]
+    #             if not poly_buff_combined.contains(shapely.geometry.Point(*pt)):
+    #                 plt.plot(pt[0], -pt[1], '.', color = 'green')
+    #                 board.addVia(*pt, via_diameter, via_drill_diameter, 1)
 
     plotShapelyPolyLike(ax, poly_buff_combined, facecolor=(0., 0., 1., 0.2))
     plotShapelyPolyLike(ax, poly_combined, facecolor=(0., 0., 0., 0.2))

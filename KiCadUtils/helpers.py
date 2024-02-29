@@ -94,3 +94,26 @@ def distributePointsOnPath(path, separation, init_gap = 0.0, fin_gap = 0.0):
     x1 = total_length - fin_gap
     N = int((x1 - x0) / separation) + 1
     return np.array([interp_func(x) for x in np.linspace(x0, x1, N)])
+
+def distributePointsInPolygon(poly, grid_size,
+        pattern_type = 'triangular', margin = 0.0):
+    poly = shapely.geometry.Polygon(poly).buffer(-margin)
+    x1, y1, x2, y2 = poly.bounds
+    w = x2 - x1
+    h = y2 - y1
+    x0 = (x1 + x2) / 2
+    y0 = (y1 + y2) / 2
+    if pattern_type == 'triangular':
+        dy = grid_size * np.sqrt(3) / 2
+        Ny = int(h / dy) - 1
+        Nx = int(w / grid_size) - 1
+        for i in range(Ny):
+            y = dy * (i - (Ny-1)/2)
+            for j in range(Nx):
+                x = grid_size * ((j - (Nx-1)/2) + 0.25 * (-1)**(i % 2))
+                pt = [x0+x, y0+y]
+                if poly.contains(shapely.geometry.Point(*pt)):
+                    yield pt
+
+    else:
+        raise NotImplementedError(f'pattern type {pattern_type}')

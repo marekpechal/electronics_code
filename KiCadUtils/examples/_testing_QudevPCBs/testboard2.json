@@ -1,0 +1,45 @@
+{
+  "board_name": "TEST_BOARD",
+  "board_comments": "",
+  "board_shape": "RECTANGULAR",
+  "board_width": 60.0,
+  "board_height": 50.0,
+  "trace_bend_radius": 2.0,
+  "launcher_to_connector_mapping": {
+    "1": ["1", "|[r110][3.0]"],
+    "2": ["2", "|[r90][3.0]"],
+    "3": ["3", "-"],
+    "4": ["4", "|5|[l30R5][3.0]"],
+    "5": ["5", "|8|[l35R8][3.0]"]
+    },
+  "connectors": [
+      {
+        "footprint": "SMP_19S102_40ML5_2layer_508um_AD1000",
+        "pattern_type": "LINEAR",
+        "pattern_start_point": [-25.0, -16.0],
+        "pattern_end_point": [25.0, 12.0],
+        "pattern_count": 5,
+        "footprint_orientation": 90
+      }
+    ],
+  "holes": [
+      {
+        "pattern_type": "LINEAR",
+        "pattern_start_point": [-25.0, 20.0],
+        "pattern_end_point": [25.0, 20.0],
+        "pattern_count": 5,
+        "drill_diameter": 2.0
+      }
+    ],
+  "launchers": [
+      {
+        "pattern_type": "LINEAR",
+        "pattern_start_point": "[-10.0, top_edge]",
+        "pattern_end_point": "[10.0, top_edge]",
+        "pattern_count": 5,
+        "launcher_orientation": 270,
+        "launcher_length": 0.5,
+        "launcher_width": 0.2
+      }
+    ]
+}

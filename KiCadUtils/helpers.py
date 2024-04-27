@@ -5,6 +5,10 @@ from matplotlib.collections import PatchCollection
 import shapely.geometry
 import scipy.interpolate
 
+def rotation_matrix(phi):
+    c = np.cos(phi)
+    s = np.sin(phi)
+    return np.array([[c, s], [-s, c]])
 
 def plotShapelyPolygon(ax, poly, **kwargs):
     """

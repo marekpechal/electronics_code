@@ -1,14 +1,11 @@
 import numpy as np
 from Structure import Structure
+from helpers import rotation_matrix
 
 # TODO: allow passing nets by name as well as index
 # TODO: fix zone net assignment
 # TODO: pass centers of circles, arcs etc as lists/tuples, not individual coordinates
-
-def _rotation_matrix(phi):
-    c = np.cos(phi)
-    s = np.sin(phi)
-    return np.array([[c, s], [-s, c]])
+# TODO: improve estimate of text bounding box
 
 class Transformation:
     def __init__(self, translation_vector, rotation_angle):
@@ -16,7 +13,7 @@ class Transformation:
         self.rotation_angle = rotation_angle
 
     def __call__(self, x):
-        return (_rotation_matrix(self.rotation_angle).dot(x) +
+        return (rotation_matrix(self.rotation_angle).dot(x) +
             self.translation_vector)
 
     def __mul__(self, other):
@@ -104,6 +101,15 @@ class KiCadStructure(Structure):
         return T.translation_vector + r*np.array([[np.cos(u), np.sin(u)]
             for u in np.linspace(0, 2*np.pi, Npoints+1)[:-1]])
 
+    def getTextBoundingBox(self):
+        T = self.getTransformation()
+        text = self.content[-1].strip('"')
+        fontSize = float(self['effects']['font']['size'].content[0])
+        w = 1.2 * fontSize * len(text)
+        h = 2 * fontSize
+        pts = [[-w/2, -h/2], [w/2, -h/2], [w/2, h/2], [-w/2, h/2]]
+        return np.array([T(x) for x in pts])
+
     def toPolygon(self):
         if self.name == 'segment':
             return self.getSegment()
@@ -119,75 +125,11 @@ class KiCadStructure(Structure):
                 raise NotImplementedError(f'pad {self.content[1:]}')
         elif self.name == 'zone':
             return self.getPolygon()
+        elif self.name in ['gr_text', 'fp_text']:
+            return self.getTextBoundingBox()
         else:
             raise NotImplementedError(f'{self.name}')
 
-
-    # DEPRECTATED; to be removed later
-    # def toPolys(self, recursive = False, **kwargs): # does not handle all geometry
-    #     layers = {}
-    #
-    #     if recursive:
-    #         objects = self.walk(**kwargs)
-    #     else:
-    #         objects = self.getChildren
-    #
-    #     for entry in self.walk():
-    #         if entry.name == 'zone':
-    #             layer = list(entry['layer'])[0].content[0]
-    #             if not layer in layers:
-    #                 layers[layer] = []
-    #             for child in entry.children:
-    #                 if child.name == 'filled_polygon':
-    #                     pts = np.array([[float(s) for s in pos.content] for pos in list(child['pts'])[0].children])
-    #                     layers[layer].append(pts)
-    #
-    #         if entry.name == 'segment':
-    #             layer = list(entry['layer'])[0].content[0]
-    #             if not layer in layers:
-    #                 layers[layer] = []
-    #             poly = _segmentToPoly(
-    #                 [float(s) for s in list(entry['start'])[0].content],
-    #                 [float(s) for s in list(entry['end'])[0].content],
-    #                 float(list(entry['width'])[0].content[0]))
-    #             if poly is not None:
-    #                 layers[layer].append(poly)
-    #
-    #         if entry.name == 'module':
-    #             lst = list(entry['at'])
-    #             if lst:
-    #                 p = [float(s) for s in lst[0].content]
-    #                 if len(p) == 3:
-    #                     x0, y0, angle0 = p
-    #                 else:
-    #                     x0, y0 = p
-    #                     angle0 = 0
-    #             else:
-    #                 x0, y0, angle0 = 0, 0, 0
-    #             for child in entry.children:
-    #                 if child.name == 'pad':
-    #                     lst = list(child['at'])
-    #                     if lst:
-    #                         p = [float(s) for s in lst[0].content]
-    #                         if len(p) == 3:
-    #                             x1, y1, angle1 = p
-    #                         else:
-    #                             x1, y1 = p
-    #                             angle1 = 0
-    #                     else:
-    #                         x1, y1, angle1 = 0, 0, 0
-    #                     w, h = [float(s) for s in list(child['size'])[0].content]
-    #                     x = x0 + x1 * np.cos(angle0 * np.pi / 180) + y1 * np.sin(angle0 * np.pi / 180)
-    #                     y = y0 + y1 * np.cos(angle0 * np.pi / 180) - x1 * np.sin(angle0 * np.pi / 180)
-    #                     ex = np.array([np.cos(angle1 * np.pi / 180), np.sin(angle1 * np.pi / 180)])
-    #                     ey = np.array([1., -1.]) * ex[::-1]
-    #                     poly = np.array([x, y]) + np.array([
-    #                         -0.5*w*ex-0.5*h*ey, 0.5*w*ex-0.5*h*ey, 0.5*w*ex+0.5*h*ey, -0.5*w*ex+0.5*h*ey])
-    #                     for layer in list(child['layers'])[0].content:
-    #                         if not layer in layers:
-    #                             layers[layer] = []
-    #                         layers[layer].append(poly)
-    #     return layers
 
     # UNPACKING AND MODIFYING COORDINATES
 
@@ -213,7 +155,8 @@ class KiCadStructure(Structure):
         return T
 
     def getCoordinateObjects(self):
-        for obj in self.walk(check = lambda obj: obj.parent is None or obj.parent['at'] is None):
+        for obj in self.walk(check = lambda obj: obj.parent is None or len(list(obj.getChildren('at'))) == 0):
+            yield from obj.getChildren('at')
             if obj.name in ['at', 'xy', 'start', 'end']:
                 yield obj
 
@@ -269,8 +212,13 @@ class KiCadStructure(Structure):
 
     def removeEdgeCuts(self):
         for obj in self.walk():
-            obj.children = [child for child in obj.children
-                if not (child.name == 'gr_line' and child['layer'].content[0] == 'Edge.Cuts')]
+            children_to_keep = []
+            for child in obj.children:
+                if not (
+                        child.name == 'gr_line' and
+                        child['layer'].content[0] == '"Edge.Cuts"'):
+                    children_to_keep.append(child)
+            obj.children = children_to_keep
 
     def addNet(self, name):
         net_nums = self.netNumbers()
@@ -282,20 +230,41 @@ class KiCadStructure(Structure):
             position = (max(pos_list) if pos_list else None))
         return idx
 
-    def addGraphicalLine(self, x1, y1, x2, y2, width, layer):
-        child = self.addChild(cls = KiCadStructure, name = 'gr_line')
+    def addLine(self, line_token, x1, y1, x2, y2, width, layer):
+        line_token = line_token.split(' ')
+        child = self.addChild(cls = KiCadStructure, name = line_token[0],
+            content = line_token[1:])
         child.addChild(cls = KiCadStructure, name = 'start', content = [str(x1), str(y1)])
         child.addChild(cls = KiCadStructure, name = 'end', content = [str(x2), str(y2)])
         child.addChild(cls = KiCadStructure, name = 'layer', content = [layer])
         child.addChild(cls = KiCadStructure, name = 'width', content = [str(width)])
 
-    def addGraphicalArc(self, ptStart, ptMid, ptEnd, width, layer):
-        child = self.addChild(cls = KiCadStructure, name = 'gr_arc')
+    def addGraphicalLine(self, x1, y1, x2, y2, width, layer):
+        self.addLine('gr_line', x1, y1, x2, y2, width, layer)
+        # child = self.addChild(cls = KiCadStructure, name = 'gr_line')
+        # child.addChild(cls = KiCadStructure, name = 'start', content = [str(x1), str(y1)])
+        # child.addChild(cls = KiCadStructure, name = 'end', content = [str(x2), str(y2)])
+        # child.addChild(cls = KiCadStructure, name = 'layer', content = [layer])
+        # child.addChild(cls = KiCadStructure, name = 'width', content = [str(width)])
+
+    def addFootprintLine(self, x1, y1, x2, y2, width, layer):
+        self.addLine('fp_line', x1, y1, x2, y2, width, layer)
+
+    def addArc(self, arc_token, ptStart, ptMid, ptEnd, width, layer):
+        arc_token = arc_token.split(' ')
+        child = self.addChild(cls = KiCadStructure, name = arc_token[0],
+            content = arc_token[1:])
         child.addChild(cls = KiCadStructure, name = 'start', content = [str(ptStart[0]), str(ptStart[1])])
         child.addChild(cls = KiCadStructure, name = 'mid', content = [str(ptMid[0]), str(ptMid[1])])
         child.addChild(cls = KiCadStructure, name = 'end', content = [str(ptEnd[0]), str(ptEnd[1])])
         child.addChild(cls = KiCadStructure, name = 'layer', content = [layer])
         child.addChild(cls = KiCadStructure, name = 'width', content = [str(width)])
+
+    def addGraphicalArc(self, ptStart, ptMid, ptEnd, width, layer):
+        self.addArc('gr_arc', ptStart, ptMid, ptEnd, width, layer)
+
+    def addFootprintArc(self, ptStart, ptMid, ptEnd, width, layer):
+        self.addArc('fp_arc', ptStart, ptMid, ptEnd, width, layer)
 
     def addGraphicalCircle(self, xc, yc, radius, width, layer):
         child = self.addChild(cls = KiCadStructure, name = 'gr_circle')
@@ -303,6 +272,27 @@ class KiCadStructure(Structure):
         child.addChild(cls = KiCadStructure, name = 'end', content = [str(xc + radius), str(yc)])
         child.addChild(cls = KiCadStructure, name = 'layer', content = [layer])
         child.addChild(cls = KiCadStructure, name = 'width', content = [str(width)])
+
+    def addText(self, text_token, text, x, y, size, layer, orientation = None):
+        text_token = text_token.split(' ')
+        child = self.addChild(cls = KiCadStructure, name = text_token[0],
+            content = text_token[1:] + [f'"{text}"'])
+        child.addChild(cls = KiCadStructure, name = 'at',
+            content = [str(x), str(y)] + ([] if orientation is None else [str(orientation)]))
+        child.addChild(cls = KiCadStructure, name = 'layer', content = [layer])
+        effects = child.addChild(cls = KiCadStructure, name = 'effects')
+        font = effects.addChild(cls = KiCadStructure, name = 'font')
+        font.addChild(cls = KiCadStructure, name = 'size', content = [str(size), str(size)])
+        font.addChild(cls = KiCadStructure, name = 'thickness', content = [str(size/5)])
+
+    def addGraphicalText(self, text, x, y, size, layer, orientation = None):
+        self.addText('gr_text', text, x, y, size, layer, orientation = orientation)
+
+    def addFootprintReferenceText(self, text, x, y, size, layer, orientation = None):
+        self.addText('fp_text reference', text, x, y, size, layer, orientation = orientation)
+
+    def addFootprintValueText(self, text, x, y, size, layer, orientation = None):
+        self.addText('fp_text value', text, x, y, size, layer, orientation = orientation)
 
     def addSegment(self, pt1, pt2, width, layer, net):
         child = self.addChild(cls = KiCadStructure, name = 'segment')
@@ -364,13 +354,13 @@ class KiCadStructure(Structure):
         n = np.array([1, -1]) * e[::-1]
         self.addEdgeCutLine(*(list(pt1 + n * width / 2) + list(pt2 + n * width / 2)))
         self.addEdgeCutLine(*(list(pt1 - n * width / 2) + list(pt2 - n * width / 2)))
-        self.addEdgeCutArc(x1, y1, *list(pt1 + n * width / 2), -180)
-        self.addEdgeCutArc(x2, y2, *list(pt2 + n * width / 2), 180)
+        self.addEdgeCutArc(pt1 + n * width / 2, pt1 - e * width / 2, pt1 - n * width / 2)
+        self.addEdgeCutArc(pt2 + n * width / 2, pt2 + e * width / 2, pt2 - n * width / 2)
 
     def merge(self, other):
         Structure.merge(self, other,
-            names_toMerge = ['gr_line', 'gr_poly', 'gr_text', 'module', 'segment', 'via', 'zone', 'net', 'net_class'],
-            names_toCompare = ['general', 'host', 'layers', 'page', 'setup', 'version'])
+            names_toMerge = ['gr_line', 'gr_poly', 'gr_text', 'module', 'segment', 'via', 'zone', 'net', 'net_class', 'footprint'],
+            names_toCompare = ['general', 'host', 'layers', 'page', 'setup', 'version', 'generator', 'paper'])
 
     def toPCBstring(self, indent = ''):
         content_copy = self.content.copy()
